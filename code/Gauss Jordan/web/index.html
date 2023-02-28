@@ -1,0 +1,302 @@
+<html>
+    <head><meta charset="utf-8"/></head>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <body>
+        <div>
+            Dimensions: <input type="number" size=2 id="dimensionValue"> <button onclick="setDimension()" id="dimensionButton">Ok</button>
+        </div>
+        <div  id="controls" style="visibility: hidden">
+            <button onclick="addVector()">Add vector</button>
+            <input type="radio" id="generic" name="result" onclick="resultType('generic')">
+            <label for="generic">Generic</label>
+            <input type="radio" id="specific" name="result" onclick="resultType('specific')">
+            <label for="specific">Specific</label>
+            <button onclick="startCalc()">Compute</button>
+        </div>
+        <div>
+            <span id="newVector"></span>
+            <span id="result" style="visibility: hidden"></span>
+        </div>
+        <div id="resultContainer"></div>
+    </body>
+    
+    <br>
+    Translated by MellOTron
+    <script>
+        Math.MCD = function(a, b){
+            let sign = a / Math.abs(a);
+            a*=sign;
+            while(b != 0) [a, b] = [b, a%b];
+            return a * sign;
+        }
+        Math.mcm = function(a, b){
+            return Math.abs(a*b)/Math.MCD(a,b);
+        }
+        class Rational {
+            constructor(a, b = 1){
+                if(a instanceof Rational){
+                    this.a = a.a;
+                    this.b = a.b;
+                    this.s = a.s;
+                }
+                else{
+                    this.s = ((a*b)>=0)||-1;
+                    a = Math.abs(a);
+                    b = Math.abs(b);
+                    for(let i = 2; i<=a&&i<=b; i++){
+                      if(!(a%i||b%i)){
+                        a /= i;
+                        b /= i;
+                        i--;
+                        if(a==1||b==1) break;
+                    }
+                    }
+                    this.a = a;
+                    this.b = b;
+                }
+
+            }
+            print() {
+                let fraz = this.a!=0&&this.b!=1;
+                return (this.s==-1?"-":"")+(fraz?"\\dfrac{":"")+this.a+(fraz?('}{'+this.b)+"}":"");
+            }
+            printZeroHidden(coeff) {return this.a==0?"":((this.s==1?"+":"-")+(this.b!=1?"\\dfrac{":"")+(coeff==undefined?this.a:((this.a!=1?this.a:"")+coeff))+(this.b!=1?('}{'+this.b+"}"):""))}
+            val(){return this.s*this.a/this.b}
+            plus(v){return new Rational(this.s*this.a*v.b+v.s*v.a*this.b, this.b*v.b)}
+            minus(v){return new Rational(this.s*this.a*v.b-v.s*v.a*this.b, this.b*v.b)}
+            times(v){return new Rational(this.s*v.s*v.a*this.a, this.b*v.b)}
+            div(v){return new Rational(this.s*v.s*this.a*v.b, this.b*v.a)}
+        }
+        class Polynomial {
+            constructor(p){
+                this.p = p||[];
+            }
+            push(e){this.p.push(e)}
+            val(pos){return this.p[pos]}
+            print(){
+                console.log(this.p.map(e => e.print()).join("&"));
+                return this.p.map(e => e.print()).join("&");
+            }
+            printZeroHidden(){return this.p.map((e, i) => e.printZeroHidden("b_"+(i+1))).filter(e=>e!="").join("")||"0";}
+            plus(p){return new Polynomial(this.p.map((e, i)=>e.plus(p.p[i])))}
+            minus(p){return new Polynomial(this.p.map((e, i)=>e.minus(p.p[i])))}
+            times(v){return new Polynomial(this.p.map(e=>e.times(v)))}
+            div(v){return new Polynomial(this.p.map(e=>e.div(v)))}
+            semplify(){
+                let div = 1;
+                for(let i = 0; i<this.p.length; i++) if(this.p[i].val()){div = new Rational(this.p[i]); break;}
+                this.p = this.div(div).p;
+                return div;
+            }
+        }
+        class Equation {
+            constructor(p1, p2){
+                this.p1 = p1||new Polynomial();
+                this.p2 = p2||new Rational(0);
+            }
+            printP2(n){
+                if(this.p2 instanceof Rational) return (this.p2.print());
+                return this.p2.printZeroHidden();
+            }
+            push(e){this.p1.push(new Rational(e));}
+            val(pos){return this.p1.val(pos)}
+            print(){return this.p1.print()+"&|&"+this.printP2();}
+            plus(p){return new Equation(this.p1.plus(p.p1), this.p2.plus(p.p2))}
+            minus(p){return new Equation(this.p1.minus(p.p1), this.p2.minus(p.p2))}
+            times(v){return new Equation(this.p1.times(v), this.p2.times(v))}
+            div(v){return new Equation(this.p1.div(v), this.p2.div(v))}
+            semplify(){
+              let s = this.p1.semplify();
+              if(s.val() == 1) return;
+              this.p2 = this.p2.div(s);
+              return s;
+            }
+            equalsToNumber(n){this.p2 = new Rational(n)}
+            equalsToGeneric(height, n){
+                this.p2 = new Polynomial();
+                for(let i = 0; i<height; i++) this.p2.push(new Rational(0));
+                this.p2.p[n] = new Rational(1);
+            }
+
+        }
+
+        class Matrix {
+            constructor(){
+                this.m = [];
+                this.length = 0;
+            }
+            push(v){
+                this.length++;
+                for(let i in v){
+                    if(!this.m[i]) this.m[i] = new Equation();
+                    this.m[i].push(v[i]);
+                }
+            }
+            equalsTo(v){
+                for(let i in v) this.m[i].equalsToNumber(v[i]);
+            }
+            equalsToGeneric(){
+                for(let i = 0; i<this.m.length; i++) this.m[i].equalsToGeneric(this.m.length, i);
+            }
+            print(){
+                return "\\(\\begin{pmatrix}"+this.m.reduce((r, e) => r+e.print()+"\\\\", "")+"\\end{pmatrix}\\)";
+            }
+            exchangeLines(n1, n2){
+                [this.m[n1], this.m[n2]] = [this.m[n2], this.m[n1]];
+            }
+            gauss(){
+                let i, pivot;
+                let pivotlst = [];
+                let consistent = true;
+                console.log(this.print());
+                gaussPrint(this.print());
+                for(i = 0, this.pivHeight = 0; i<this.length; i++, this.pivHeight++){ //per ogni colonna della matrice
+                    pivotlst[i] = true;
+                    if(this.pivHeight>=this.m.length){pivotlst[i] = false; continue;} //pivot è variabile libera
+                    pivot = this.m[this.pivHeight].val(i).val();
+                    if(pivot == 0){
+                        let j = this.pivHeight+1;
+                        while(j<this.m.length&&this.m[j].val(i).val() == 0) j++;
+                        if(j!=this.m.length){
+                            gaussPrint(`\\(\\text{Swap lines ${i+1} and ${j+1}:}\\)`);
+                            this.exchangeLines(i, j);
+                            gaussPrint(this.print());
+                            i--;
+                        }
+                        else pivotlst[i] = false;
+                        this.pivHeight--;
+                        continue;
+                    }
+                    for(let j = this.pivHeight+1; j<this.m.length; j++){ //per ogni riga sotto il pivot
+                        var underPivot = this.m[j].val(i).val();
+                        if(underPivot == 0) continue;
+                        if(underPivot%pivot) {
+                            let mul = Math.mcm(pivot, underPivot)/underPivot;
+                            this.m[j] = this.m[j].times(new Rational(mul));
+                            console.log(this.print());
+                            gaussPrint(`\\(\\text{${underPivot} is not divisible by ${pivot}: multiply it by ${mul} in order to make it divisible:}\\)`);
+                            gaussPrint(this.print());
+                        } //se non è divisibile per il pivot lo rendo divisibile
+                        underPivot = this.m[j].val(i).val();
+                        this.m[j] = this.m[j].minus(this.m[this.pivHeight].times(new Rational(underPivot, pivot)));
+                        gaussPrint(`\\(\\text{Subtract line ${this.pivHeight+1} to line ${j+1}, ${underPivot/pivot} times:}\\)`);
+                        console.log(this.print());
+                        gaussPrint(this.print());
+                    }
+                }
+                if(pivotlst.some(e=>!e))
+                    gaussPrint("\\(\\text{Free variables = " + pivotlst.map((e, i)=>!e?(i+1)+"°":"").filter(e=>e!="").join(' ')+"}\\)");
+                for(let j = this.pivHeight; j<this.m.length; j++){
+                    gaussPrint(`\\(\\ ${this.m[j].printP2()} \\text{ must be = 0 ${isNaN(this.m[j].printP2()) || this.m[j].printP2() == 0 ? "" : ", but it isn't!!"}}\\)`);
+                    if(!isNaN(this.m[j].printP2()) && this.m[j].printP2() != 0) consistent = false;
+                }
+                this.pivHeight--;
+                if(pivotlst.every(e => e) && consistent) this.jordan();
+                MathJax.typeset();
+            }
+            jordan(){
+                let s;
+                jordanPrint(this.print());
+                for(let i = this.pivHeight; i>=0; i--){
+                    s = this.m[i].semplify();
+                    if(s){
+                        jordanPrint(`\\(\\text{Simplify line ${i} by dividing it by ${s.print()}}\\)`);
+                        jordanPrint(this.print());
+                    }
+
+                    for(let j = i-1; j>=0; j--){
+                        jordanPrint(`\\(\\text{Subtract line ${i} to line ${j} ${this.m[j].val(i).val()/this.m[i].val(i).val()} times}\\)`);
+                        this.m[j] = this.m[j].minus(this.m[i].times(this.m[j].val(i).div(this.m[i].val(i))));
+                        jordanPrint(this.print());
+                    }
+                }
+            }
+        }
+    </script>
+    <script>
+        var dimension;
+        var vectors=0;
+        var m;
+        var generic;
+        var gaussPrintStarted;
+        var jordanPrintStarted;
+        document.getElementById("generic").click();
+        function setDimension(){
+            document.getElementById('dimensionValue').setAttribute('disabled', 'disabled');
+            document.getElementById('dimensionButton').setAttribute('disabled', 'disabled');
+            dimension = document.getElementById('dimensionValue').value;
+            document.getElementById('controls').style.visibility = "visible";
+            addVector(true);
+
+
+        }
+        function addVector(r){
+            let res = '<math xmlns="http://www.w3.org/1998/Math/MathML">';
+            res += '<mrow data-mjx-texclass="INNER">';
+            res += '<mtext><msub><mi>v</mi><mi>'+(r?"r":vectors)+'</mi></msub> =</mtext>';
+            res += '<mo data-mjx-texclass="OPEN">(</mo><mtable columnspacing="1em" rowspacing="4pt" id="input-base">';
+            for(let i = 0; i<dimension; i++)
+                res+='<mtr><mtd><mi><semantics><annotation><input type="text" id='+(r?"res":('vr'+vectors+'-'))+i+' size=1/></annotation></semantics></mi></mtd></mtr>';
+            res+='</mtable><mo data-mjx-texclass="CLOSE">)</mo>';
+            res+='</mrow></math>';
+            if(r){
+                document.getElementById("result").innerHTML=res;
+            }
+            else{
+                res+='<span id="newVector"></span>';
+                vectors++;
+                document.getElementById("newVector").outerHTML=res;
+            }
+            MathJax.typeset();
+        }
+        function resultType(t){
+            if(t=="generic"){
+                generic = true;
+                document.getElementById("result").style.visibility = "hidden";
+            }
+            else{
+                generic = false;
+                document.getElementById("result").style.visibility = "visible";
+            }
+        }
+        function startCalc(){
+            m = new Matrix();
+            gaussPrintStarted = false;
+            jordanPrintStarted = false;
+            document.getElementById("resultContainer").innerHTML = '<div id="gauss"></div><div id="jordan" style="margin-top: 50px"></div>';
+            for(let i = 0; i<vectors; i++){
+                let v = [];
+                for(let j = 0; j<dimension; j++){
+                    v.push(document.getElementById("vr"+i+'-'+j).value);
+                }
+                m.push(v);
+            }
+            if(generic){
+                m.equalsToGeneric();
+            }
+            else{
+                let v = [];
+                for(let i = 0; i<dimension; i++){
+                    v.push(document.getElementById("res"+i).value);
+                }
+                m.equalsTo(v);
+            }
+            m.gauss();
+        }
+        function gaussPrint(t){
+            if(!gaussPrintStarted){
+                gaussPrintStarted = true;
+                document.getElementById("gauss").outerHTML = "<h2>Gauss:</h2><div id='gauss'></div>";
+            }
+            document.getElementById("gauss").outerHTML = "<div style='margin:20px'>"+t+"</div><div id='gauss'></div>";
+        }
+        function jordanPrint(t){
+            if(!jordanPrintStarted){
+                jordanPrintStarted = true;
+                document.getElementById("jordan").outerHTML = "<h2>Jordan:</h2><div id='jordan'></div>";
+            }
+            document.getElementById("jordan").outerHTML = "<div style='margin:20px'>"+t+"</div><div id='jordan'></div>";
+        }
+    </script>
+</html>
